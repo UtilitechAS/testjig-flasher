@@ -3,28 +3,139 @@
 <head>
   <meta charset="utf-8">
   <title>Test Jig Flasher</title>
-  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
   <style>
-    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+    body { font-family: sans-serif; max-width: 700px; margin: 40px auto; padding: 0 16px; }
     .jig { margin-bottom: 24px; padding: 16px; border: 1px solid #ccc; border-radius: 8px; }
+    .jig h2 { margin-top: 0; }
+    button { padding: 8px 16px; font-size: 1em; cursor: pointer; }
+    button:disabled { cursor: default; opacity: 0.5; }
+    .log { background:#111; color:#0f0; font-family: monospace; font-size: 0.85em; height: 160px;
+            overflow-y: auto; padding: 8px; margin-top: 8px; display: none; white-space: pre-wrap; }
+    .status { margin-top: 8px; font-weight: bold; }
+    .progress-bar { height: 10px; background: #ddd; border-radius: 4px; overflow: hidden; margin-top: 8px; display:none; }
+    .progress-fill { height: 100%; background: #2a7; width: 0%; transition: width 0.2s; }
+    .instructions { font-size: 0.9em; color: #444; }
   </style>
 </head>
 <body>
   <h1>Test Jig Flasher</h1>
+  <p class="instructions">Version: v3.2.7</p>
+  <p class="instructions">
+    Before connecting: hold <strong>BOOT</strong> on the jig, press and release <strong>RESET</strong>, then release BOOT.
+    This puts the chip into download mode (required on this hardware &mdash; the page cannot do it automatically).
+    Then click Connect below.
+  </p>
 
-  <div class="jig">
-    <h2>POW-K Test Jig</h2>
-    <esp-web-install-button manifest="pow_k_testjig/manifest.json"></esp-web-install-button>
-  </div>
+  <div class="jig" data-jig="pow_k_testjig" data-name="POW-K Test Jig"></div>
+  <div class="jig" data-jig="pow_u_testjig" data-name="POW-U Test Jig"></div>
+  <div class="jig" data-jig="pow_p1_testjig" data-name="POW-P1 Test Jig"></div>
 
-  <div class="jig">
-    <h2>POW-U Test Jig</h2>
-    <esp-web-install-button manifest="pow_u_testjig/manifest.json"></esp-web-install-button>
-  </div>
+  <script type="module">
+    import { ESPLoader, Transport } from "https://cdn.jsdelivr.net/npm/esptool-js@0.6.0/lib/index.js";
 
-  <div class="jig">
-    <h2>POW-P1 Test Jig</h2>
-    <esp-web-install-button manifest="pow_p1_testjig/manifest.json"></esp-web-install-button>
-  </div>
+    const OFFSETS_S2 = {
+      bootloader: 0x1000,
+      partitions: 0x8000,
+      boot_app0: 0xe000,
+      firmware: 0x10000,
+    };
+
+    async function fetchBin(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to download " + url + " (" + res.status + ")");
+      return new Uint8Array(await res.arrayBuffer());
+    }
+
+    function buildUI(container, jigFolder, displayName) {
+      container.innerHTML =
+        '<h2>' + displayName + '</h2>' +
+        '<button class="connect-btn">Connect</button>' +
+        '<label style="margin-left:16px;"><input type="checkbox" class="erase-cb"> Erase flash before installing</label>' +
+        '<div class="status"></div>' +
+        '<div class="progress-bar"><div class="progress-fill"></div></div>' +
+        '<div class="log"></div>';
+
+      const connectBtn = container.querySelector(".connect-btn");
+      const eraseCb = container.querySelector(".erase-cb");
+      const statusEl = container.querySelector(".status");
+      const logEl = container.querySelector(".log");
+      const progressBar = container.querySelector(".progress-bar");
+      const progressFill = container.querySelector(".progress-fill");
+
+      function log(line) {
+        logEl.style.display = "block";
+        logEl.textContent += line + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      const terminal = {
+        clean: function () { logEl.textContent = ""; },
+        writeLine: function (data) { log(data); },
+        write: function (data) { log(data); },
+      };
+
+      connectBtn.addEventListener("click", async function () {
+        connectBtn.disabled = true;
+        statusEl.textContent = "Requesting port...";
+        try {
+          const port = await navigator.serial.requestPort();
+          const transport = new Transport(port, true);
+          const esploader = new ESPLoader({ transport: transport, baudrate: 115200, terminal: terminal });
+
+          statusEl.textContent = "Connecting (no auto-reset, using manual bootloader mode)...";
+          const chipName = await esploader.main("no_reset");
+          statusEl.textContent = "Connected: " + chipName + ". Downloading firmware...";
+
+          if (!chipName.startsWith("ESP32-S2")) {
+            log("Warning: detected chip is " + chipName + ", expected ESP32-S2. Continuing anyway.");
+          }
+
+          const base = jigFolder + "/";
+          const files = await Promise.all([
+            fetchBin(base + "bootloader.bin"),
+            fetchBin(base + "partitions.bin"),
+            fetchBin(base + "boot_app0.bin"),
+            fetchBin(base + "firmware.bin"),
+          ]);
+          const bootloader = files[0], partitions = files[1], bootApp0 = files[2], firmware = files[3];
+
+          statusEl.textContent = "Flashing...";
+          progressBar.style.display = "block";
+
+          await esploader.writeFlash({
+            fileArray: [
+              { data: bootloader, address: OFFSETS_S2.bootloader },
+              { data: partitions, address: OFFSETS_S2.partitions },
+              { data: bootApp0, address: OFFSETS_S2.boot_app0 },
+              { data: firmware, address: OFFSETS_S2.firmware },
+            ],
+            flashMode: "keep",
+            flashFreq: "keep",
+            flashSize: "keep",
+            eraseAll: eraseCb.checked,
+            compress: true,
+            reportProgress: function (fileIndex, written, total) {
+              const pct = Math.floor((written / total) * 100);
+              progressFill.style.width = pct + "%";
+              statusEl.textContent = "Flashing... " + pct + "%";
+            },
+          });
+
+          await transport.disconnect();
+          statusEl.textContent = "Done! Press the RESET button on the jig to boot the new firmware.";
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = "Failed: " + err.message;
+          log("Error: " + err.message);
+        } finally {
+          connectBtn.disabled = false;
+        }
+      });
+    }
+
+    document.querySelectorAll(".jig").forEach(function (el) {
+      buildUI(el, el.dataset.jig, el.dataset.name);
+    });
+  </script>
 </body>
 </html>
