@@ -21,7 +21,7 @@
   <h1>Test Jig Flasher</h1>
   <p class="instructions">Version: v3.2.7</p>
   <p class="instructions">
-    Before connecting: hold <strong>BOOT</strong> on the jig, press and release <strong>RESET</strong>, then release BOOT.
+    Before connecting: hold <strong>PROG</strong> on the jig, press and release <strong>RESET</strong>, then release PROG.
     This puts the chip into download mode (required on this hardware &mdash; the page cannot do it automatically).
     Then click Connect below.
   </p>
@@ -31,7 +31,7 @@
   <div class="jig" data-jig="pow_p1_testjig" data-name="POW-P1 Test Jig"></div>
 
   <script type="module">
-    import { ESPLoader, Transport } from "https://esm.sh/esptool-js@0.6.0";
+    import { ESPLoader, Transport } from "./esptool-bundle.js";
 
     const OFFSETS_S2 = {
       bootloader: 0x1000,
