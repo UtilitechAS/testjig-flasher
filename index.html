@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Test Jig Flasher</title>
+  <script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 16px; }
+    .jig { margin-bottom: 24px; padding: 16px; border: 1px solid #ccc; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Test Jig Flasher</h1>
+
+  <div class="jig">
+    <h2>POW-K Test Jig</h2>
+    <esp-web-install-button manifest="pow_k_testjig/manifest.json"></esp-web-install-button>
+  </div>
+
+  <div class="jig">
+    <h2>POW-U Test Jig</h2>
+    <esp-web-install-button manifest="pow_u_testjig/manifest.json"></esp-web-install-button>
+  </div>
+
+  <div class="jig">
+    <h2>POW-P1 Test Jig</h2>
+    <esp-web-install-button manifest="pow_p1_testjig/manifest.json"></esp-web-install-button>
+  </div>
+</body>
+</html>
